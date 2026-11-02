@@ -1,0 +1,47 @@
+name: Build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Test and build universal packages
+        id: package
+        run: |
+          bash scripts/release.sh
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' 'build/轻右键.app/Contents/Info.plist')
+          echo "directory=build/release/$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-files
+          path: ${{ steps.package.outputs.directory }}/
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-files
+          path: release
+      - name: Publish download files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/*.pkg release/*.zip release/SHA256SUMS.txt \
+            --verify-tag --title "轻右键 $RELEASE_TAG" --notes-file release/RELEASE_NOTES.md

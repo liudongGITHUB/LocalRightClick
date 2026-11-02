@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+# Never replace the app while it may be copying or moving the user's files.
+if /usr/bin/pgrep -x LocalRightClick >/dev/null; then
+  printf '请先退出轻右键，等待文件操作完成后再安装。\n' >&2
+  exit 1
+fi
+target_app="${3%/}/Applications/轻右键.app"
+if [ -L "$target_app" ]; then
+  printf '安装位置是符号链接，已停止以保护现有文件。\n' >&2
+  exit 1
+fi
+if [ -e "$target_app" ]; then
+  bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$target_app/Contents/Info.plist")
+  if [ "$bundle_id" != 'local.liudong.LocalRightClick' ]; then
+    printf '同名位置不是轻右键，已停止安装。\n' >&2
+    exit 1
+  fi
+fi

@@ -1,0 +1,7 @@
+build/
+.DS_Store
+# Local development notes and verification records are not release documentation.
+docs/
+*.log
+.env
+.env.*
