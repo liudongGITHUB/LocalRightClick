@@ -1,7 +1,11 @@
 import Foundation
 
 @main struct CoreTests {
-    static func main() throws {
+    static func main() {
+        do { try run() }
+        catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+    }
+    static func run() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("LocalRightClick-tests-\(UUID().uuidString)")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -202,6 +206,36 @@ import Foundation
             try check(try Data(contentsOf: result.appendingPathComponent("Document.iwa")) == Data([10, 20, 30]))
             rejects { _ = try packaged.create(in: dst, name: "副本.pages", base: root) }
             rejects { _ = try packaged.create(in: dst, name: "../escape.pages", base: root) }
+        }
+        try test("quick create uses configured name and preserves existing files with numbered suffixes") {
+            let output = root.appendingPathComponent("quick-create")
+            try fm.createDirectory(at: output, withIntermediateDirectories: true)
+            let template = FileTemplate(id: "json", name: "JSON", filename: "我的配置.v1.json")
+            let first = try template.createDefault(in: output, base: root)
+            try Data("keep".utf8).write(to: first)
+            let second = try template.createDefault(in: output, base: root)
+            let third = try template.createDefault(in: output, base: root)
+            try check(first.lastPathComponent == "我的配置.v1.json")
+            try check(second.lastPathComponent == "我的配置.v1 2.json")
+            try check(third.lastPathComponent == "我的配置.v1 3.json")
+            try check(try String(contentsOf: first, encoding: .utf8) == "keep")
+            try check(try String(contentsOf: second, encoding: .utf8) == "{}\n")
+        }
+        try test("quick create skips dangling symlinks and copies iWork packages") {
+            let output = root.appendingPathComponent("quick-packages")
+            try fm.createDirectory(at: output, withIntermediateDirectories: true)
+            let hidden = FileTemplate(id: "txt", name: "Text", filename: ".env")
+            try fm.createSymbolicLink(atPath: output.appendingPathComponent(".env").path, withDestinationPath: "/nonexistent-lrc-target")
+            let created = try hidden.createDefault(in: output, base: root)
+            try check(created.lastPathComponent == ".env 2")
+            try check(try fm.destinationOfSymbolicLink(atPath: output.appendingPathComponent(".env").path) == "/nonexistent-lrc-target")
+            let source = src.appendingPathComponent("测试.pages")
+            let template = try FileTemplate.importFile(source, into: root)
+            let first = try template.createDefault(in: output, base: root)
+            let second = try template.createDefault(in: output, base: root)
+            try check(first.lastPathComponent == "测试.pages")
+            try check(second.lastPathComponent == "测试 2.pages")
+            try check(try Data(contentsOf: second.appendingPathComponent("Document.iwa")) == Data([10, 20, 30]))
         }
         test("template metadata rejects traversal and invalid office extensions") {
             rejects { try FileTemplate(id: "custom", name: "Test", filename: "../file.txt").validate() }

@@ -39,7 +39,7 @@ import UniformTypeIdentifiers
         if target != nil {
             let newMenu = submenu("新建文件", in: menu)
             for template in settings.enabledTemplates {
-                let title = (template.showsInMainMenu ? "新建 " : "") + template.name + "…"
+                let title = (template.showsInMainMenu ? "新建 " : "") + template.name
                 let item = add(title, .create, directory: actionDirectory, option: template.id, to: template.showsInMainMenu ? wrapper : newMenu)
                 let type = UTType(filenameExtension: (template.filename as NSString).pathExtension) ?? .data
                 let icon = NSWorkspace.shared.icon(for: type).copy() as? NSImage
@@ -114,7 +114,7 @@ import UniformTypeIdentifiers
             }
             try SharedStore.submit(request)
             let host = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            guard NSWorkspace.shared.open(host) else { throw UserError("无法打开轻右键主应用，请从应用程序中打开。") }
+            guard wakeHostApplication(at: host) else { throw UserError("无法打开轻右键主应用，请从应用程序中打开后重试。") }
             DistributedNotificationCenter.default().postNotificationName(Notification.Name(SharedStore.notification), object: nil, userInfo: nil, deliverImmediately: true)
         } catch {
             logger.error("Action failed: \(error.localizedDescription, privacy: .public)")

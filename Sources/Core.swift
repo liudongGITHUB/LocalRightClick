@@ -74,6 +74,23 @@ struct FileTemplate: Codable {
         throw UserError("找不到这个文件模板，请重新添加。")
     }
 
+    func createDefault(in directory: URL, base: URL, resources: URL? = Bundle.main.resourceURL) throws -> URL {
+        try validate()
+        try FileActions.requireDirectory(directory)
+        let stem = (filename as NSString).deletingPathExtension
+        let ext = (filename as NSString).pathExtension
+        var number = 1
+        while true {
+            let name = number == 1 ? filename : "\(stem) \(number)" + (ext.isEmpty ? "" : ".\(ext)")
+            if !FileActions.exists(directory.appendingPathComponent(name)) {
+                do { return try create(in: directory, name: name, base: base, resources: resources) }
+                // Another process may create this name after the existence check.
+                catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {}
+            }
+            number += 1
+        }
+    }
+
     func create(in directory: URL, name: String, base: URL, resources: URL? = Bundle.main.resourceURL) throws -> URL {
         try validate()
         if let storedFile {

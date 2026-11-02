@@ -448,13 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource,
         case .create:
             guard let template = settings.enabledTemplates.first(where: { $0.id == request.option }) else { throw UserError("模板已停用或移除，请重新打开菜单。") }
             let dir = try directory(for: request.directory!)
-            let panel = NSAlert(); panel.messageText = "新建文件"; panel.informativeText = "位置：\(dir.path)"
-            panel.addButton(withTitle: "创建"); panel.addButton(withTitle: "取消")
-            let input = NSTextField(string: template.filename); input.frame = NSRect(x: 0, y: 0, width: 360, height: 24)
-            panel.accessoryView = input; panel.window.initialFirstResponder = input
-            NSApp.activate(ignoringOtherApps: true)
-            guard panel.runModal() == .alertFirstButtonReturn else { return }
-            let created = try template.create(in: dir, name: input.stringValue, base: SharedStore.base)
+            let created = try template.createDefault(in: dir, base: SharedStore.base)
             NSWorkspace.shared.activateFileViewerSelecting([created])
         case .openApplication, .openTerminal, .openITerm, .openVSCode, .openCursor:
             let application = try settings.application(for: request)
