@@ -43,5 +43,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" release/*.pkg release/*.zip release/SHA256SUMS.txt \
+          gh release create "$RELEASE_TAG" release/*.pkg release/*.zip release/SHA256SUMS.txt release/update.json \
             --verify-tag --title "轻右键 $RELEASE_TAG" --notes-file release/RELEASE_NOTES.md

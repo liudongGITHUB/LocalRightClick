@@ -4,6 +4,8 @@ cd "$(dirname "$0")/.."
 mkdir -p build/module-cache
 swiftc -swift-version 5 -module-cache-path build/module-cache Sources/Core.swift Tests/CoreTests.swift -o build/core-tests
 build/core-tests
+swiftc -swift-version 5 -module-cache-path build/module-cache Sources/Core.swift Sources/AppUpdate.swift Tests/AppUpdateTests.swift -o build/update-tests
+build/update-tests
 swiftc -swift-version 5 -module-cache-path build/module-cache Sources/Core.swift Sources/OpenApplicationManager.swift Tests/OpenApplicationTests.swift -framework AppKit -o build/open-application-tests
 build/open-application-tests
 swiftc -swift-version 5 -module-cache-path build/module-cache Sources/AppLaunch.swift Tests/AppLaunchTests.swift -framework AppKit -o build/app-launch-tests

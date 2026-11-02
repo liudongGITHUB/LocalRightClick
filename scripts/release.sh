@@ -20,4 +20,17 @@ cp CHANGELOG.md "$output/RELEASE_NOTES.md"
   cd "$output"
   shasum -a 256 "LocalRightClick-$version-universal.pkg" "LocalRightClick-$version-universal.zip" > SHA256SUMS.txt
 )
+python3 - "$output" "$version" <<'PY'
+import json, pathlib, sys
+output, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+tag = 'v' + version
+names = [f'LocalRightClick-{version}-universal.pkg', 'SHA256SUMS.txt']
+release = dict(tag_name=tag, draft=False, prerelease=False,
+               body=pathlib.Path('CHANGELOG.md').read_text(),
+               assets=[dict(name=name, size=(output / name).stat().st_size,
+                            browser_download_url=f'https://github.com/liudongGITHUB/LocalRightClick/releases/download/{tag}/{name}')
+                       for name in names])
+(output / 'update.json').write_text(json.dumps(release, ensure_ascii=False, indent=2) + '\n')
+PY
+build/update-tests --release-directory "$output"
 printf 'Release files: %s/%s\n' "$(pwd)" "$output"

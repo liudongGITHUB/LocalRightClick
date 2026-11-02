@@ -18,6 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource,
     private var status: NSTextField!
     private var loginToggle: NSButton!
     private var loginDescription: NSTextField!
+    private var updateButton: NSButton!
+    private var updateDescription: NSTextField!
+    private let updateClient = AppUpdateClient()
+    private var updateTask: Task<Void, Never>?
+    private var availableUpdate: AppRelease?
+    private var downloadedUpdate: UpdateDownload?
+    private var installingUpdate = false
+    private var currentVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知" }
     private let favorites = NSTableView()
     private var templateManager: TemplateManager?
     private var applicationManager: OpenApplicationManager?
@@ -45,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource,
         if !drainRequests() && !loginLaunch { showSettings() }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if installingUpdate { return false }
         if !drainRequests() && !processingRequest && !busy { showSettings() }
         return true
     }
@@ -256,8 +265,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource,
             column([label("配置与自定义模板", size: 15, bold: true), label("设置和导入模板保存在这台 Mac 上。", size: 12, secondary: true)]),
             spacer(), button("打开配置目录", #selector(openConfiguration))
         ])
+        updateButton = button("检查更新", #selector(updateApplication))
+        updateDescription = label("当前版本 \(currentVersion) · 点击时才访问 GitHub", size: 12, secondary: true)
+        let updateCard = row([
+            iconTile("arrow.down.circle", color: .systemOrange),
+            column([label("软件更新", size: 15, bold: true), updateDescription]),
+            spacer(), updateButton
+        ])
         stack.setCustomSpacing(30, after: stack.arrangedSubviews.last!)
-        for item in [extensionCard, loginRow, storageCard] {
+        for item in [extensionCard, loginRow, storageCard, updateCard] {
             stack.addArrangedSubview(item)
             item.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
             let divider = NSBox(); divider.boxType = .separator
@@ -379,6 +395,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource,
     @objc private func showSettings() { refreshStatus(); refreshLoginItem(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     @objc private func manageExtension() { FIFinderSyncController.showExtensionManagementInterface() }
     @objc private func openConfiguration() { NSWorkspace.shared.open(SharedStore.base) }
+    @objc private func updateApplication() {
+        if downloadedUpdate != nil { installUpdate(); return }
+        guard updateTask == nil else { return }
+        updateButton.isEnabled = false
+        updateTask = Task { @MainActor in
+            defer { updateTask = nil; updateButton.isEnabled = true }
+            do {
+                if let release = availableUpdate { try await downloadUpdate(release); return }
+                updateDescription.stringValue = "正在检查 GitHub 最新版本…"
+                let release = try await updateClient.latest()
+                guard try release.isNewer(than: currentVersion) else {
+                    updateDescription.stringValue = "当前版本 \(currentVersion) · 已是最新版本"
+                    return
+                }
+                availableUpdate = release
+                updateDescription.stringValue = "当前 \(currentVersion) · 发现新版 \(release.version)"
+                updateButton.title = "下载更新…"
+                let alert = NSAlert()
+                alert.messageText = "发现轻右键 \(release.version)"
+                alert.informativeText = "当前版本 \(currentVersion)。下载校验后，通过系统安装向导覆盖更新，保留配置与模板。"
+                alert.addButton(withTitle: "下载更新"); alert.addButton(withTitle: "稍后")
+                let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 200))
+                scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
+                let notes = NSTextView(frame: scroll.contentView.bounds)
+                notes.isEditable = false; notes.font = .systemFont(ofSize: 13)
+                notes.isHorizontallyResizable = false; notes.autoresizingMask = [.width]
+                notes.textContainer?.widthTracksTextView = true
+                notes.string = String((release.body ?? "此版本暂无更新说明。").prefix(20_000))
+                scroll.documentView = notes; alert.accessoryView = scroll
+                NSApp.activate(ignoringOtherApps: true)
+                if alert.runModal() == .alertFirstButtonReturn { try await downloadUpdate(release) }
+            } catch {
+                updateDescription.stringValue = "更新未完成，可重试 · 当前版本 \(currentVersion)"
+                showError(error)
+            }
+        }
+    }
+    @MainActor private func downloadUpdate(_ release: AppRelease) async throws {
+        updateDescription.stringValue = "正在下载并校验 \(release.version)…"
+        downloadedUpdate = try await updateClient.download(release)
+        updateDescription.stringValue = "\(release.version) 已下载并通过校验 · 安装会保留配置"
+        updateButton.title = "退出并安装…"
+    }
+    private func installUpdate() {
+        guard !busy, !processingRequest, pendingRequests.isEmpty else {
+            showMessage("文件操作进行中", "请等待文件操作完成后再安装更新。")
+            return
+        }
+        guard let package = downloadedUpdate else { return }
+        do {
+            try package.verify()
+            installingUpdate = true
+            guard NSWorkspace.shared.open(package.file) else {
+                installingUpdate = false
+                throw UserError("无法打开安装向导，请重试。")
+            }
+            NSApp.terminate(nil)
+        } catch {
+            installingUpdate = false
+            downloadedUpdate = nil
+            updateButton.title = "重新下载…"
+            updateDescription.stringValue = "安装未开始，请重新下载 · 当前版本 \(currentVersion)"
+            showError(error)
+        }
+    }
     private func showMessage(_ title: String, _ message: String) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert(); alert.messageText = title; alert.informativeText = message; alert.runModal()
@@ -406,7 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource,
         let id = settings.favorites[favorites.selectedRow].id
         do { var next = settings; next.favorites.removeAll { $0.id == id }; try persist(next) } catch { showError(error) }
     }
-    @objc private func requestReady() { DispatchQueue.main.async { _ = self.drainRequests() } }
+    @objc private func requestReady() { DispatchQueue.main.async { if !self.installingUpdate { _ = self.drainRequests() } } }
     @discardableResult private func drainRequests() -> Bool {
         do {
             pendingRequests += try SharedStore.takeRequests()
